@@ -1,6 +1,9 @@
-import Ember from 'ember';
 import Base from 'ember-simple-auth/authorizers/base';
 import Configuration from '../configuration';
+import { inject as service } from '@ember/service';
+import { isEmpty } from '@ember/utils';
+import { get } from '@ember/object';
+
 
 /**
   Authorizer that works with token-based authentication like JWT
@@ -15,7 +18,7 @@ import Configuration from '../configuration';
   @extends Base
 */
 export default Base.extend({
-  session: Ember.inject.service('session'),
+  session: service('session'),
 
   /**
     The prefix used in the value of the Authorization header.
@@ -79,10 +82,10 @@ export default Base.extend({
     @param {function} block
   */
   authorize(data = {}, block = () => {}) {
-    const token = Ember.get(data, this.tokenPropertyName);
+    const token = get(data, this.tokenPropertyName);
     const prefix = this.authorizationPrefix ? this.authorizationPrefix : '';
 
-    if (this.get('session.isAuthenticated') && !Ember.isEmpty(token)) {
+    if (this.get('session.isAuthenticated') && !isEmpty(token)) {
       block(this.authorizationHeaderName, prefix + token);
     }
   }

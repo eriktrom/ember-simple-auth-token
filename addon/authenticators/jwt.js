@@ -1,8 +1,13 @@
-import Ember from 'ember';
 import Configuration from '../configuration';
 import TokenAuthenticator from './token';
+import { run } from "@ember/runloop";
+import { merge, assign as _assign } from '@ember/polyfills';
+import { isEmpty } from '@ember/utils';
+import EmberObject from '@ember/object';
+import RSVP from 'rsvp';
+import { get } from '@ember/object';
 
-const assign = Ember.assign || Ember.merge;
+const assign = _assign || merge;
 
 /**
   JWT (JSON Web Token) Authenticator that supports automatic token refresh.
@@ -90,29 +95,29 @@ export default TokenAuthenticator.extend({
 
     @method restore
     @param {Object} data The data to restore the session from
-    @return {Ember.RSVP.Promise} A promise that when it resolves results
+    @return {RSVP.Promise} A promise that when it resolves results
                                  in the session being authenticated
   */
   restore(data) {
-    const dataObject = Ember.Object.create(data);
+    const dataObject = EmberObject.create(data);
 
-    return new Ember.RSVP.Promise((resolve, reject) => {
+    return new RSVP.Promise((resolve, reject) => {
       const now = this.getCurrentTime();
       const token = dataObject.get(this.tokenPropertyName);
       const refreshToken = dataObject.get(this.refreshTokenPropertyName);
       let expiresAt = dataObject.get(this.tokenExpireName);
 
-      if (Ember.isEmpty(token)) {
+      if (isEmpty(token)) {
         return reject(new Error('empty token'));
       }
 
-      if (Ember.isEmpty(expiresAt)) {
+      if (isEmpty(expiresAt)) {
         // Fetch the expire time from the token data since `expiresAt`
         // wasn't included in the data object that was passed in.
         const tokenData = this.getTokenData(token);
 
         expiresAt = tokenData[this.tokenExpireName];
-        if (Ember.isEmpty(expiresAt)) {
+        if (isEmpty(expiresAt)) {
           return resolve(data);
         }
       }
@@ -156,17 +161,17 @@ export default TokenAuthenticator.extend({
     @method authenticate
     @param {Object} credentials The credentials to authenticate the session with
     @param {Object} headers Additional headers to be sent to server
-    @return {Ember.RSVP.Promise} A promise that resolves when an auth token is
+    @return {RSVP.Promise} A promise that resolves when an auth token is
                                  successfully acquired from the server and rejects
                                  otherwise
   */
   authenticate(credentials, headers) {
-    return new Ember.RSVP.Promise((resolve, reject) => {
+    return new RSVP.Promise((resolve, reject) => {
       const data = this.getAuthenticateData(credentials);
 
       this.makeRequest(this.serverTokenEndpoint, data, headers)
         .then((response) => {
-          Ember.run(() => {
+          run(() => {
             try {
               const sessionData = this.handleAuthResponse(response);
 
@@ -176,7 +181,7 @@ export default TokenAuthenticator.extend({
             }
           });
         }, (xhr) => {
-          Ember.run(() => { reject(xhr.responseJSON || xhr.responseText); });
+          run(() => { reject(xhr.responseJSON || xhr.responseText); });
         });
     });
   },
@@ -187,7 +192,7 @@ export default TokenAuthenticator.extend({
 
     If both `token` and `expiresAt` are non-empty, and `expiresAt` minus the optional
     refres leeway is greater than the calculated `now`, the token refresh will be scheduled
-    through Ember.run.later.
+    through run.later.
 
     @method scheduleAccessTokenRefresh
     @private
@@ -198,10 +203,10 @@ export default TokenAuthenticator.extend({
       const now = this.getCurrentTime();
       const wait = (expiresAt - now - this.refreshLeeway) * 1000;
 
-      if (!Ember.isEmpty(refreshToken) && !Ember.isEmpty(expiresAt) && wait > 0) {
-        Ember.run.cancel(this._refreshTokenTimeout);
+      if (!isEmpty(refreshToken) && !isEmpty(expiresAt) && wait > 0) {
+        run.cancel(this._refreshTokenTimeout);
         delete this._refreshTokenTimeout;
-        this._refreshTokenTimeout = Ember.run.later(this, this.refreshAccessToken, refreshToken, wait);
+        this._refreshTokenTimeout = run.later(this, this.refreshAccessToken, refreshToken, wait);
       }
     }
   },
@@ -223,10 +228,10 @@ export default TokenAuthenticator.extend({
   refreshAccessToken(token, headers) {
     const data = this.makeRefreshData(token);
 
-    return new Ember.RSVP.Promise((resolve, reject) => {
+    return new RSVP.Promise((resolve, reject) => {
       this.makeRequest(this.serverTokenRefreshEndpoint, data, headers)
         .then((response) => {
-          Ember.run(() => {
+          run(() => {
             try {
               const sessionData = this.handleAuthResponse(response);
 
@@ -237,7 +242,7 @@ export default TokenAuthenticator.extend({
             }
           });
         }, (xhr, status, error) => {
-          Ember.Logger.warn(
+          console.warn( // eslint-disable-line
             'Access token could not be refreshed - ' +
             `server responded with ${error}.`
           );
@@ -297,24 +302,11 @@ export default TokenAuthenticator.extend({
     @private
   */
   makeRequest(url, data, headers) {
-    return Ember.$.ajax({
-      url: url,
+    return this.get('ajax').request(url, {
       method: 'POST',
       data: JSON.stringify(data),
       dataType: 'json',
-      contentType: 'application/json',
-      headers: this.headers,
-      beforeSend: (xhr, settings) => {
-        if(this.headers['Accept'] === null || this.headers['Accept'] === undefined) {
-          xhr.setRequestHeader('Accept', settings.accepts.json);
-        }
-
-        if (headers) {
-          Object.keys(headers).forEach((key) => {
-            xhr.setRequestHeader(key, headers[key]);
-          });
-        }
-      }
+      headers: Object.assign(this.headers, headers),
     });
   },
 
@@ -323,12 +315,12 @@ export default TokenAuthenticator.extend({
     promise.
     @method invalidate
     @param {Object} data The data of the session to be invalidated
-    @return {Ember.RSVP.Promise} A resolving promise
+    @return {RSVP.Promise} A resolving promise
   */
   invalidate() {
-    Ember.run.cancel(this._refreshTokenTimeout);
+    run.cancel(this._refreshTokenTimeout);
     delete this._refreshTokenTimeout;
-    return new Ember.RSVP.resolve();
+    return new RSVP.resolve();
   },
 
   /**
@@ -347,22 +339,22 @@ export default TokenAuthenticator.extend({
     @private
    */
   handleAuthResponse(response) {
-    const token = Ember.get(response, this.tokenPropertyName);
+    const token = get(response, this.tokenPropertyName);
 
-    if (Ember.isEmpty(token)) {
+    if (isEmpty(token)) {
       throw new Error('Token is empty. Please check your backend response.');
     }
 
     const tokenData = this.getTokenData(token);
-    const expiresAt = Ember.get(tokenData, this.tokenExpireName);
+    const expiresAt = get(tokenData, this.tokenExpireName);
     const tokenExpireData = {};
 
     tokenExpireData[this.tokenExpireName] = expiresAt;
 
     if (this.refreshAccessTokens) {
-      const refreshToken = Ember.get(response, this.refreshTokenPropertyName);
+      const refreshToken = get(response, this.refreshTokenPropertyName);
 
-      if (Ember.isEmpty(refreshToken)) {
+      if (isEmpty(refreshToken)) {
         throw new Error('Refresh token is empty. Please check your backend response.');
       }
 
